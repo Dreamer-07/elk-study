@@ -247,5 +247,117 @@ filebeat 目前支持两种 prospector 类型: log(日志) & stdin(控制台)
 
 ## 1.2 Metricbeat
 
+定期收集操作系统或应用服务的指标数据，存储在 ES ，进行实时分析
+
+### Metricbeat 组成 
+
+- Module: 收集的对象，如 mysql/redis/等
+- Metricset: 收集指标的集合，如 CPU/内存/网络等
+
+以 Redis Module 为例
+
+![image-20210626145130512](README.assets/image-20210626145130512.png)
+
+### 部署和收集系统指标
+
+1. 在 [下载地址](https://www.elastic.co/cn/downloads/beats/metricbeat) 中下载对应的压缩包
+
+2. 这里使用 Linux 中的  `wget` 下载对应的压缩包
+
+   ```shell
+   wget https://artifacts.elastic.co/downloads/beats/metricbeat/metricbeat-7.13.2-linux-x86_64.tar.gz
+   ```
+
+3. 解压并进入到对应的目录中
+
+4. 修改默认的配置文件 `metricbeat.yml`
+
+   ```yaml
+   setup.template.settings:
+     index.number_of_shards: 3 # [可选] 修改 ES 索引的分片数量
+   output.elasticsearch:
+     # 配置 ES
+     hosts: ["10.1.53.30:9200"]
+   ```
+
+5. 默认是部署了收集系统指标的，所以直接开启即可
+
+   ```shell
+   ./metricbeat -e
+   ```
+
+6. 查看 ES
+
+   ![image-20210626153213696](README.assets/image-20210626153213696.png)
+
+### Module
+
+- 查看开启/禁用的 Module
+
+  ```shell
+  ./metricbeat modules list
+  ```
+
+- 开启/禁用 Module
+
+  ```shell
+  ./metricbeat modules enable module_name
+  ```
+
+- 可以在 `modules.d` 下查看对应的配置文件
+
+  ```yaml
+  - module: system # 模块名
+    period: 10s # 间隔，每隔一定时间进行监控后发送数据给 ES
+    metricsets: # 监控的指标
+      - cpu
+      - load
+      - memory
+      - network
+      - process
+      - process_summary
+      - socket_summary
+      #- entropy
+      #- core
+      #- diskio
+      #- socket
+      #- service
+      #- users
+  ...
+  ```
+
+#### 部署并收集 Redis 指标
+
+1. 启动 Redis  Module
+
+   ```shell
+   ./metricbeat modules enable redis
+   ```
+
+2. 修改 `modules.d` 文件夹下的 `redis.yml` 配置文件
+
+   ```yaml
+   - module: redis
+     metricsets:
+       - info # 打开信息指标
+     #  - keyspace
+     period: 10s
+   
+     # 修改为 Redis 服务的地址+端口号
+     hosts: ["127.0.0.1:6379"]
+   ```
+
+3. 启动 metricbeat 服务
+
+   ```shell
+   ./metricbeat -e
+   ```
+
+4. 查看 ES
+
+   ![image-20210626154818894](README.assets/image-20210626154818894.png)
+
+5. 更多 Module: https://www.elastic.co/guide/en/beats/metricbeat/current/metricbeat-modules.html
+
 # 第二章 Kibana
 
