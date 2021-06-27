@@ -540,3 +540,144 @@ filebeat 目前支持两种 prospector 类型: log(日志) & stdin(控制台)
 
    <img src="README.assets/image-20210627142859894.png" alt="image-20210627142859894" style="zoom: 50%;" align="left"/>
 
+# 第三章 Logstash
+
+> 官网：https://www.elastic.co/cn/logstash
+
+## 3.1 安装与部署
+
+![image-20210627144003700](README.assets/image-20210627144003700.png)
+
+1. 在 [下载地址](https://www.elastic.co/cn/downloads/past-releases#logstash) 选择合适的版本以及对应的操作系统，这里使用 `wget`下载对应的压缩包
+
+   ```shell
+   wget https://artifacts.elastic.co/downloads/logstash/logstash-7.8.1.tar.gz
+   ```
+
+   注意：需要 jdk1.8+ 的环境才能使用
+
+2. 解压并进入到对应的目录中
+
+3. 输入以下命令，启动 Logstash
+
+   ```shell
+   ./bin/logstash -e "input { stdin { } } output { stdout { } }"
+   ```
+
+   以上配置表示从控制台采集数据并输出到控制台，启动过程较慢(因为基于 java 开发)
+
+4. 输入任意字符串
+
+   <img src="README.assets/image-20210627144923941.png" alt="image-20210627144923941" style="zoom:80%;" align="left"/>
+
+## 3.3 配置说明
+
+logstash 的配置分三部分
+
+```javascript
+input { // 输入
+    stdin {  } // 标准输入(控制台)
+}
+filter { // 过滤，对数据进行分割，截取等处理
+    
+}
+output { // 输出
+    stdout { } // 标准输出(控制台)
+}
+```
+
+### 输入
+
+- 可以采集各种样式，大小和来源的数据，即使数据格式不同
+
+- Logstash 支持各种输入选择，可以在同一时间内从众多来源内捕捉数据，然后以连续的 **流式传输方式**，从日志/指标/Web应用/数据存储/AWS服务采集数据
+
+  <img src="README.assets/image-20210627145919987.png" alt="image-20210627145919987" style="zoom:80%;" align="left"/>
+
+
+
+### 过滤
+
+- 实时解析和转换数据
+
+- 数据从源传输到存储库的过程中，Logstash 过滤器能够**解析各个事件**，识别**已命名的字段以构建结构**，并将它们转换成**通用格式**，以便进行更强大的分析和实现商业价值。
+
+  > <img src="README.assets/image-20210627150142837.png" alt="image-20210627150142837" style="zoom:80%;" align="left"/>
+  >
+  > 利用 Grok 从非结构化数据中派生出结构
+  >
+  > 从 IP 地址破译出地理坐标
+  >
+  > 将 PII 数据匿名化，完全排除敏感字段
+  >
+  > 简化整体处理，不受数据源、格式或架构的影响
+
+### 输出
+
+- Logstash 提供**众多输出选择**，您可以将数据发送到您要指定的地方，并且能够灵活地解锁众多下游用例。
+
+  (尽管 Elasticsearch 是首选输出方向，能够为我们的搜索和分析带来无限可能，但它并非唯一选择。)
+
+  <img src="README.assets/image-20210627150426605.png" alt="image-20210627150426605" style="zoom:80%;" align="left"/>
+
+## 3.4 读取自定义日志文件
+
+1. 创建一个 `logstash-default.conf`  配置文件，读取输入过滤输出规则
+
+   ```javascript
+   input {
+     file { // 从文件中输入
+       path => "/opt/test/logs/app.log" // 指定文件路径
+       start_position => "beginning" // 偏移量
+     }
+   }
+   
+   filter { // 过滤规则
+     mutate {
+       split => {"message"=>"|"} // 以 | 为单位分割字符串
+     }
+   }
+   
+   output {
+     stdout { codec => rubydebug } // 输出到控制台
+   }
+   ```
+
+2. 创建对应的配置文件，并写入对应规则的数据
+
+   ```shell
+   echo "2021-06-27 15:13:30|ERROR|读取参数错误|参数: id=1002" >> /opt/test/logs/app.log
+   ```
+
+3. 启动 logstash，观察控制台输出
+
+   ```shell
+   ./bin/logstash -f logstash-default.conf
+   ```
+
+   <img src="README.assets/image-20210627151720064.png" alt="image-20210627151720064" style="zoom:80%;" align="left"/>
+
+输出到 ElasticSearch 中:
+
+1. 修改 `logstash-default.conf` 配置文件中的输出配置
+
+   ```javascript
+   output {
+     // stdout { codec => rubydebug }
+     elasticsearch {
+       hosts => ["10.1.53.30:9200"]
+     }
+   }
+   ```
+
+2. 重启 logstash
+
+   ```shell
+   ./bin/logstash -f logstash-default.conf
+   ```
+
+3. 查看 ES
+
+   <img src="README.assets/image-20210627152243289.png" alt="image-20210627152243289" style="zoom: 50%;" align="left"/>
+
+# 第四章 综合练习
