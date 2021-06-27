@@ -23,7 +23,7 @@ Beats 官网: https://www.elastic.co/cn/beats/
 2. 这里使用 `wget` 将解压包下载到 Linux 上
 
    ```shell
-   wget https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.13.2-linux-x86_64.tar.gz
+   wget https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.8.1-linux-x86_64.tar.gz
    ```
 
 3. 解压，并进入到对应的目录中
@@ -186,42 +186,34 @@ filebeat 目前支持两种 prospector 类型: log(日志) & stdin(控制台)
 启动/禁用 module
 
 ```shell
-./filebeat modules enable/disabled redis
+./filebeat modules enable/disabled module_name
 ```
 
 开启相关配置的框架，都可以在 `modules.d/` 目录下查看配置文件
 
 <img src="README.assets/image-20210626134110463.png" alt="image-20210626134110463" style="zoom:80%;"  align="left"/>
 
-#### 1) 整合 redis
+#### 1) 整合 Nginx
 
 1. 开启 filebeat 整合 redis 的 modules
 
    ```shell
-   ./filebeat modules enable redis
+   ./filebeat modules enable nginx
    ```
 
-2. 开启 redis 的日志功能
+2. 修改 filebeat 整合 nginx 的配置文件
 
    ```shell
-   # 进入 redis.conf [redis 配置文件]
-   loglevel debug # 指定日志级别
-   logfile "/usr/local/bin/logs/redis.log" # 日志存储文件
+   - module: nginx
+     access:
+       enabled: true
+       var.paths: ["/usr/local/nginx/logs/access.log*"]
+     error:
+       enabled: true
+       var.paths: ["/usr/local/nginx/logs/error.log*"]
    ```
 
-3. 修改 filebeat 整合 redis 的配置文件
-
-   ```shell
-   - module: redis
-     # Main logs
-     log:
-       enabled: true
-       var.paths: ["/usr/local/bin/logs/.log"] # 配置日志文件所在地
-     slowlog:
-       enabled: true
-   ```
-
-4. 创建一个 filebeat 配置文件，避免混淆
+3. 创建一个 filebeat 配置文件，避免混淆
 
    ```shell
    filebeat.config.modules:
@@ -233,17 +225,17 @@ filebeat 目前支持两种 prospector 类型: log(日志) & stdin(控制台)
      hosts: ["10.1.53.30:9200"]
    ```
 
-5. 启动 filebeat 和 Redis
+4. 启动 filebeat 和 Nginx
 
    ```shell
-   ./filebeat -e -c filebeat-redis.yml
+   ./filebeat -e -c filebeat-nginx.yml
    ```
 
-6. 查看 es
+5. 查看 es
 
-   ![image-20210626144251670](README.assets/image-20210626144251670.png)
+   ![image-20210627105851497](README.assets/image-20210627105851497.png)
 
-7. 更多 Module 可以查看官网: https://www.elastic.co/guide/en/beats/filebeat/7.13/filebeat-modules.html
+6. 更多 Module 可以查看官网: https://www.elastic.co/guide/en/beats/filebeat/7.13/filebeat-modules.html
 
 ## 1.2 Metricbeat
 
@@ -265,7 +257,7 @@ filebeat 目前支持两种 prospector 类型: log(日志) & stdin(控制台)
 2. 这里使用 Linux 中的  `wget` 下载对应的压缩包
 
    ```shell
-   wget https://artifacts.elastic.co/downloads/beats/metricbeat/metricbeat-7.13.2-linux-x86_64.tar.gz
+   wget https://artifacts.elastic.co/downloads/beats/metricbeat/metricbeat-7.8.1-linux-x86_64.tar.gz
    ```
 
 3. 解压并进入到对应的目录中
@@ -301,7 +293,7 @@ filebeat 目前支持两种 prospector 类型: log(日志) & stdin(控制台)
 - 开启/禁用 Module
 
   ```shell
-  ./metricbeat modules enable module_name
+  ./metricbeat modules enable/disabled module_name
   ```
 
 - 可以在 `modules.d` 下查看对应的配置文件
@@ -326,25 +318,76 @@ filebeat 目前支持两种 prospector 类型: log(日志) & stdin(控制台)
   ...
   ```
 
-#### 部署并收集 Redis 指标
+### Nginx Module
 
-1. 启动 Redis  Module
+#### 1) 开启 Nginx 状态查询
+
+1. 重新编译 Nginx 开启状态查询，进入到 Nginx 的压缩包中输入以下命令
 
    ```shell
-   ./metricbeat modules enable redis
+   ./configure --with-stream --prefix=/usr/local/nginx --with-http_stub_status_module
    ```
 
-2. 修改 `modules.d` 文件夹下的 `redis.yml` 配置文件
+2. 安装
+
+   ```shell
+   make
+   make install
+   ```
+
+3. 回到 `/usr/local/nginx/sbin` 目录中输入 ==./nginx -v== 查看编译的模块
+
+   ![image-20210627111045394](README.assets/image-20210627111045394.png)
+
+4. 编辑 Nginx 的配置文件，添加状态查询接口
+
+   ```javascript
+   location = /nginx-status {
+       stub_status on;
+       access_log off;
+   }
+   ```
+
+5. 重启 Nginx，访问对应的状态服务接口
+
+   ![image-20210627111438586](README.assets/image-20210627111438586.png)
+
+   `Active connection`: 正在处理的活动连接数
+
+   `server accepts handled requests:` 三个数字，分别表示:
+
+   1. Nginx 启动到现在一共处理的连接数
+   2. Nginx 启动到现在一共成功创建握手数
+   3. 表示总共处理的请求数
+   4. **请求丢失数 = 连接数 - 握手数**
+
+   Reading: Nginx 读取到客户端的 Header 信息数
+
+   Writiing: Nginx 返回给客户端 Header 信息数
+
+   Waitiing: Nginx 已经处理完成正在等待下一条请求指令的驻留链接(开启 keep-alive 的情况下，该值为 Active - (Reading + Writing))
+
+#### 2) 配置 Nginx Module
+
+1. 启动 Nginx Module
+
+   ```shell
+   ./metricbeat modules enable nginx
+   ```
+
+2. 修改 `modules.d` 文件夹下的 `nginx.yml` 配置文件
 
    ```yaml
-   - module: redis
-     metricsets:
-       - info # 打开信息指标
-     #  - keyspace
+   - module: nginx
+     #metricsets:
+     #  - stubstatus
      period: 10s
    
-     # 修改为 Redis 服务的地址+端口号
-     hosts: ["127.0.0.1:6379"]
+     # Nginx Hosts
+     hosts: ["http://192.168.127.139"]
+   
+     # Nginx 状态查询接口
+     server_status_path: "nginx-status"
    ```
 
 3. 启动 metricbeat 服务
@@ -355,9 +398,145 @@ filebeat 目前支持两种 prospector 类型: log(日志) & stdin(控制台)
 
 4. 查看 ES
 
-   ![image-20210626154818894](README.assets/image-20210626154818894.png)
+   ![image-20210627134142227](README.assets/image-20210627134142227.png)
 
 5. 更多 Module: https://www.elastic.co/guide/en/beats/metricbeat/current/metricbeat-modules.html
 
 # 第二章 Kibana
+
+官网：https://www.elastic.co/cn/kibana
+
+是一款开源的 **数据分析和可视化平台**，作为 Elastic Stack 成员之一，设计用于和 ES 协作。可以通过 Kibana 对 ES 中的索引数据进行搜索，查看，交互操作。利用图表、表格及地图对数据进行多元化的分析和呈现
+
+## 2.1 安装
+
+> 注意: Kibana 依赖于 node.js 且 保证尽量保证 Kibana 和 ES 版本一致
+
+1. 在 [下载地址](https://www.elastic.co/cn/downloads/kibana) 中找到对应的压缩包
+
+2. 这里使用 Linux 的 `wget` 获取对应的压缩包
+
+   ```shell
+   https://artifacts.elastic.co/downloads/kibana/kibana-7.8.1-linux-x86_64.tar.gz
+   ```
+
+3. 解压并进入对应的目录中
+
+   ```shell
+   tar -zxvf kibana-7.8.1-linux-x86_64.tar.gz
+   ```
+
+4. 编辑 `conf/kibana.yml` 
+
+   ```yaml
+   server.host: "192.168.127.139" # kibana 对外暴露服务
+   elasticsearch.hosts: ["http://10.1.53.30:9200"] # es 地址
+   i18n.locale: "zh-CN" # 国际化
+   ```
+
+5. 启动 Kibana(第一次启动慢正常)
+
+   ```shell
+   ./bin/kibana --allow-root
+   ```
+
+6. 访问 http://192.168.127.139:5601
+
+   ![image-20210626194243237](README.assets/image-20210626194243237.png)
+
+## 2.2 功能说明
+
+> <img src="README.assets/image-20210626194316428.png" alt="image-20210626194316428" style="zoom:80%;" align="left"/>
+
+### 数据探索
+
+> 通过可视化查看索引数据
+
+1. 创建索引模式
+
+   ![image-20210626194643512](README.assets/image-20210626194643512.png)
+
+   ![image-20210626194709777](README.assets/image-20210626194709777.png)
+
+2. 查看指定字段
+
+   ![image-20210626195232965](README.assets/image-20210626195232965.png)
+
+###  Metricbeat 指标仪表盘
+
+1. 修改 Metricbeat 配置文件
+
+   ```yaml
+   setup.kibana:
+     host: "192.168.127.139:5601" # 指定kibana 地址
+   ```
+
+2. 向 Kafka 中安装 Metricbeat (需要等待一段时间)
+
+   ```shell
+   ./metricbeat setup --dashboards
+   ```
+
+3. 回到 kibana 中查看仪表盘数据
+
+   ![image-20210627135609226](README.assets/image-20210627135609226.png)
+
+4. 查看 Nginx 相关指标
+
+   ![image-20210627135811977](README.assets/image-20210627135811977.png)
+
+5. 查看系统相关指标
+
+   ![image-20210627135929135](README.assets/image-20210627135929135.png)
+
+### Filebeat 日志仪表盘
+
+1. 修改 filebeat 配置文件, 添加相关配置项
+
+   ```yaml
+   setup.kibana:
+     host: "192.168.127.139:5601"
+   ```
+
+2. 向 Kibana 中安装 filebeat 仪表盘
+
+   ```shell
+   ./filebeat -c filebeat-nginx.yml setup
+   ```
+
+3. 启动 filebeat，回到 Kibana 中查看 Nginx 日志仪表盘数据
+
+   <img src="README.assets/image-20210627140810116.png" alt="image-20210627140810116" style="zoom:80%;" align="left"/>
+
+   日志概述
+
+   ![image-20210627141014857](README.assets/image-20210627141014857.png)
+
+   反向代理访问和错误日志详情
+
+   ![image-20210627141115333](README.assets/image-20210627141115333.png)
+
+### 自定义图表
+
+1. 在 `visualize` 菜单项中点击 ==创建可视化== 选择要创建的图表类型
+
+   <img src="README.assets/image-20210627141633910.png" alt="image-20210627141633910" style="zoom: 67%;" align="left"/>
+
+2. 选择数据源
+
+   <img src="README.assets/image-20210627141723905.png" alt="image-20210627141723905"  align="left" style="zoom:50%;" />
+
+3. 配置图表数据
+
+   <img src="README.assets/image-20210627142213015.png" alt="image-20210627142213015" style="zoom:50%;" align="left"/>
+
+4. 保存图表
+
+   <img src="README.assets/image-20210627142340359.png" alt="image-20210627142340359" style="zoom:50%;" align="left"/>
+
+   <img src="README.assets/image-20210627142541539.png" alt="image-20210627142541539" align="left" style="zoom:50%;" />
+
+5. 使用多个**图表**创建==仪表盘==(记得保存)
+
+   <img src="README.assets/image-20210627142859894.png" alt="image-20210627142859894" style="zoom: 50%;" align="left"/>
 
