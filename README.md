@@ -681,3 +681,125 @@ output { // 输出
    <img src="README.assets/image-20210627152243289.png" alt="image-20210627152243289" style="zoom: 50%;" align="left"/>
 
 # 第四章 综合练习
+
+> ElasticSearch + Logstash + Beats + Kibana 
+
+## 4.1 流程说明
+
+![image-20210627152540984](README.assets/image-20210627152540984.png)
+
+- 模拟用户使用 APP 并生成相关日志，用来记录用户的操作
+
+  ```
+  [INFO] 2021-06-27 15:13:30 [pers.dreamer07.mblog.Post] - DAU|5602|游览笔记|2021-06-27 15:13:30
+  ```
+
+- 通过 **Filebeat** 读取日志文件中的内容，并将内容发送给 **Logstash** 进行数据处理
+
+- Logstash 接收到内容后，进行处理(如分割操作)，如何再将数据发送给 ES
+
+- **Kibana** 读取 ES 中的数据，并通过自定义的仪表盘进行展示
+
+> 这里就通过 echo 来模拟 APP 生成日志
+
+## 4.2 Filebeat 
+
+1. 创建一个新的配置文件 `filebeat-exam.yml`
+
+   ```yaml
+   filebeat.inputs:
+   - type: log
+     enabled: true
+     paths:
+       - /opt/test/logs/*.log
+   setup.template.settings:
+     index.number_of_shards: 3
+   output.logstash:
+     hosts: ["192.168.127.139:5055"] # 配置 Logstash 监听的端口
+   ```
+
+   注意，这里不要急着开启 Filebeat，因为 Logstash 还未配置，应该先去 4.3 配置 Logstash 
+
+2. 启动 filebeat
+
+   ```shell
+   ./filebeat -e -c filebeat-exam.yml
+   ```
+
+## 4.3 Logstash
+
+1. 创建一个新的配置文件 `logstash-dashboards.conf`
+
+   ```javascript
+   input {
+     beats {
+       port => "5055" // logstash 监听端口
+     }
+   }
+   
+   filter {
+     mutate {
+       split => ["message", "|" ] // 分割字符串
+       add_field => { // 添加新字段
+         "userId" => "%{[message][1]}"
+         "visit" => "%{[message][2]}"
+         "date" => "%{[message][3]}"
+       }
+       convert => { // 为字段指定类型方便下游操作
+         "userId" => "integer"
+         "visit" => "string"
+         "date" => "string"
+       }
+     }
+   }
+   
+   output { // 配置输出源
+     elasticsearch {
+       hosts => ["10.1.53.30:9200"]
+     }
+   }
+   ```
+   
+2. 启动 Logstash
+
+   ```shell
+   ./bin/logstash -f logstash-dashboards.conf
+   ```
+
+3. 删除 ES 中 logstash 原索引后向日志文件中添加数据
+
+   ```shell
+   echo "[INFO] 2021-06-27 15:13:30 [pers.dreamer07.mblog.Post] - DAU|5602|游览笔记|2021-06-27 15:13:30" >> web.log
+   ```
+
+   ![image-20210628090807504](README.assets/image-20210628090807504.png)
+
+## 4.4 Kibana
+
+> 先创建基于 logstash 的索引模式
+
+### 时间间隔的柱形图
+
+![image-20210628093210416](README.assets/image-20210628093210416.png)
+
+保存: web app 柱形图
+
+### 不同操作的饼图
+
+![image-20210628093516817](README.assets/image-20210628093516817.png)
+
+保存为: web app 饼图
+
+### 数据表格
+
+![image-20210628093641788](README.assets/image-20210628093641788.png)
+
+保存为: web app 数据表格
+
+### 仪表盘
+
+选择已经存在的可视化界面构成仪表盘
+
+![image-20210628093810693](README.assets/image-20210628093810693.png)
+
+保存为: web app 仪表盘
